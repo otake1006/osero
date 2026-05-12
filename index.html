@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>オセロ オンライン</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    /* ===== Lobby ===== */
+    #lobby {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 40px 48px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+    }
+
+    #lobby h1 {
+      font-size: 2rem;
+      text-align: center;
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+    }
+
+    #lobby .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 0.875rem;
+      margin-bottom: 32px;
+    }
+
+    .form-group { margin-bottom: 20px; }
+
+    .form-group label {
+      display: block;
+      font-size: 0.875rem;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus { border-color: #3b82f6; }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    button {
+      flex: 1;
+      padding: 11px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-host { background: #3b82f6; color: #fff; }
+    .btn-join { background: #10b981; color: #fff; }
+    .btn-host:hover:not(:disabled) { background: #2563eb; }
+    .btn-join:hover:not(:disabled) { background: #059669; }
+
+    #lobby-status {
+      margin-top: 18px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      text-align: center;
+      min-height: 42px;
+    }
+
+    .status-waiting { background: #1e3a5f; color: #93c5fd; }
+    .status-error   { background: #3b1f1f; color: #fca5a5; }
+    .status-info    { background: #1e3a2f; color: #6ee7b7; }
+
+    /* ===== Game ===== */
+    #game { display: none; flex-direction: column; align-items: center; gap: 16px; width: 100%; max-width: 560px; }
+
+    .game-header {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 12px 20px;
+    }
+
+    .score-box { display: flex; align-items: center; gap: 10px; }
+
+    .stone-icon {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.15);
+      flex-shrink: 0;
+    }
+
+    .stone-icon.black { background: #111; }
+    .stone-icon.white { background: #f8f8f8; }
+
+    .score-label { font-size: 0.75rem; color: #64748b; }
+    .score-val   { font-size: 1.5rem; font-weight: 700; }
+
+    .turn-badge {
+      font-size: 0.8rem;
+      padding: 4px 12px;
+      border-radius: 99px;
+      font-weight: 600;
+      background: #334155;
+      color: #94a3b8;
+      transition: all 0.3s;
+    }
+
+    .turn-badge.my-turn { background: #1d4ed8; color: #bfdbfe; animation: pulse 1.5s infinite; }
+    .turn-badge.opp-turn { background: #334155; color: #94a3b8; }
+
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
+      50%      { box-shadow: 0 0 0 6px rgba(59,130,246,0); }
+    }
+
+    /* Board */
+    .board-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      max-width: 520px;
+    }
+
+    #board {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      gap: 2px;
+      background: #1a4731;
+      border: 3px solid #14532d;
+      border-radius: 4px;
+      padding: 2px;
+    }
+
+    .cell {
+      background: #166534;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.15s;
+    }
+
+    .cell:hover { background: #15803d; }
+    .cell.valid::after {
+      content: '';
+      width: 28%;
+      height: 28%;
+      border-radius: 50%;
+      background: rgba(250,204,21,0.45);
+      pointer-events: none;
+    }
+
+    .cell.valid:hover::after { background: rgba(250,204,21,0.7); }
+
+    .piece {
+      width: 82%;
+      height: 82%;
+      border-radius: 50%;
+      transition: transform 0.35s cubic-bezier(.175,.885,.32,1.275), background 0.3s;
+      border: 2px solid rgba(255,255,255,0.12);
+      pointer-events: none;
+    }
+
+    .piece.black { background: radial-gradient(circle at 35% 30%, #555, #111); }
+    .piece.white { background: radial-gradient(circle at 35% 30%, #fff, #d1d5db); }
+
+    .piece.flip {
+      animation: flip 0.35s ease-in-out;
+    }
+
+    @keyframes flip {
+      0%   { transform: scaleX(1); }
+      50%  { transform: scaleX(0); }
+      100% { transform: scaleX(1); }
+    }
+
+    /* Info bar */
+    #info-bar {
+      width: 100%;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 0.875rem;
+      color: #94a3b8;
+      text-align: center;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    /* Result overlay */
+    #result-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    #result-overlay.show { display: flex; }
+
+    .result-card {
+      background: #1e293b;
+      border-radius: 20px;
+      padding: 40px 48px;
+      text-align: center;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+      animation: slideUp 0.35s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(30px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+
+    .result-title { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+    .result-score { font-size: 1rem; color: #94a3b8; margin-bottom: 24px; }
+
+    .result-btns { display: flex; gap: 12px; justify-content: center; }
+    .btn-rematch { background: #3b82f6; color: #fff; padding: 10px 28px; }
+    .btn-lobby   { background: #475569; color: #e2e8f0; padding: 10px 28px; }
+
+    @media (max-width: 480px) {
+      #lobby { padding: 28px 20px; }
+      .game-header { flex-direction: column; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== Lobby ===== -->
+<div id="lobby">
+  <h1>🎲 オセロ</h1>
+  <p class="subtitle">オンライン対戦 — P2P</p>
+
+  <div class="form-group">
+    <label for="keyword-input">合言葉</label>
+    <input id="keyword-input" type="text" placeholder="例: sakura2024" maxlength="32" autocomplete="off" />
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-host" id="btn-host">ホスト</button>
+    <button class="btn-join" id="btn-join">参加</button>
+  </div>
+
+  <div id="lobby-status"></div>
+</div>
+
+<!-- ===== Game ===== -->
+<div id="game">
+  <div class="game-header">
+    <div class="score-box">
+      <div class="stone-icon black"></div>
+      <div>
+        <div class="score-label">黒</div>
+        <div class="score-val" id="score-black">2</div>
+      </div>
+    </div>
+    <div class="turn-badge" id="turn-badge">接続中...</div>
+    <div class="score-box" style="flex-direction:row-reverse">
+      <div class="stone-icon white"></div>
+      <div style="text-align:right">
+        <div class="score-label">白</div>
+        <div class="score-val" id="score-white">2</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board-wrap">
+    <div id="board"></div>
+  </div>
+
+  <div id="info-bar">接続を待っています...</div>
+</div>
+
+<!-- ===== Result ===== -->
+<div id="result-overlay">
+  <div class="result-card">
+    <div class="result-title" id="result-title">引き分け</div>
+    <div class="result-score" id="result-score"></div>
+    <div class="result-btns">
+      <button class="btn-rematch" id="btn-rematch">再戦</button>
+      <button class="btn-lobby"   id="btn-lobby-back">ロビーへ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========================================================
+// Othello Logic
+// ========================================================
+const EMPTY = 0, BLACK = 1, WHITE = 2;
+const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+function initBoard() {
+  const b = Array.from({length:8}, () => new Array(8).fill(EMPTY));
+  b[3][3] = WHITE; b[3][4] = BLACK;
+  b[4][3] = BLACK; b[4][4] = WHITE;
+  return b;
+}
+
+function getFlips(b, row, col, color) {
+  if (b[row][col] !== EMPTY) return [];
+  const opp = color === BLACK ? WHITE : BLACK;
+  const flips = [];
+  for (const [dr, dc] of DIRS) {
+    const line = [];
+    let r = row+dr, c = col+dc;
+    while (r>=0 && r<8 && c>=0 && c<8 && b[r][c] === opp) {
+      line.push([r,c]); r+=dr; c+=dc;
+    }
+    if (line.length && r>=0 && r<8 && c>=0 && c<8 && b[r][c] === color)
+      flips.push(...line);
+  }
+  return flips;
+}
+
+function getValidMoves(b, color) {
+  const moves = [];
+  for (let r=0; r<8; r++)
+    for (let c=0; c<8; c++)
+      if (getFlips(b, r, c, color).length) moves.push([r,c]);
+  return moves;
+}
+
+function applyMove(b, row, col, color) {
+  const flips = getFlips(b, row, col, color);
+  if (!flips.length) return null;
+  const nb = b.map(r => [...r]);
+  nb[row][col] = color;
+  for (const [r,c] of flips) nb[r][c] = color;
+  return { board: nb, flips };
+}
+
+function countPieces(b) {
+  let bl=0, wh=0;
+  for (let r=0; r<8; r++)
+    for (let c=0; c<8; c++) {
+      if (b[r][c]===BLACK) bl++;
+      else if (b[r][c]===WHITE) wh++;
+    }
+  return {black:bl, white:wh};
+}
+
+// ========================================================
+// State
+// ========================================================
+let board       = initBoard();
+let currentTurn = BLACK;
+let myColor     = null;
+let peer        = null;
+let conn        = null;
+let isHost      = false;
+let gameActive  = false;
+
+// ========================================================
+// DOM helpers
+// ========================================================
+const $ = id => document.getElementById(id);
+
+function showLobbyStatus(msg, type='info') {
+  const el = $('lobby-status');
+  el.textContent = msg;
+  el.className = '';
+  if (msg) el.classList.add(`status-${type}`);
+}
+
+function setLobbyButtons(disabled) {
+  $('btn-host').disabled = disabled;
+  $('btn-join').disabled = disabled;
+}
+
+// ========================================================
+// Board rendering
+// ========================================================
+function buildBoardDOM() {
+  const el = $('board');
+  el.innerHTML = '';
+  for (let r=0; r<8; r++) {
+    for (let c=0; c<8; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.r = r;
+      cell.dataset.c = c;
+      cell.addEventListener('click', onCellClick);
+      el.appendChild(cell);
+    }
+  }
+}
+
+function renderBoard(highlightFlips=[]) {
+  const cells = $('board').querySelectorAll('.cell');
+  const valid = gameActive && currentTurn === myColor
+    ? getValidMoves(board, myColor)
+    : [];
+  const validSet = new Set(valid.map(([r,c]) => `${r},${c}`));
+  const flipSet  = new Set(highlightFlips.map(([r,c]) => `${r},${c}`));
+
+  cells.forEach(cell => {
+    const r = +cell.dataset.r, c = +cell.dataset.c;
+    const val = board[r][c];
+
+    // Remove old piece if exists
+    const old = cell.querySelector('.piece');
+
+    if (val === EMPTY) {
+      if (old) old.remove();
+      cell.classList.toggle('valid', validSet.has(`${r},${c}`));
+    } else {
+      cell.classList.remove('valid');
+      const colorClass = val === BLACK ? 'black' : 'white';
+      if (old) {
+        if (!old.classList.contains(colorClass)) {
+          // Flipped
+          old.className = `piece ${colorClass}`;
+          if (flipSet.has(`${r},${c}`)) old.classList.add('flip');
+        }
+      } else {
+        const piece = document.createElement('div');
+        piece.className = `piece ${colorClass}`;
+        cell.appendChild(piece);
+      }
+    }
+  });
+}
+
+function updateScoreUI() {
+  const {black, white} = countPieces(board);
+  $('score-black').textContent = black;
+  $('score-white').textContent = white;
+}
+
+function updateTurnBadge() {
+  const badge = $('turn-badge');
+  if (!gameActive) return;
+  const isMyTurn = currentTurn === myColor;
+  badge.textContent = isMyTurn ? 'あなたの番' : '相手の番';
+  badge.className = `turn-badge ${isMyTurn ? 'my-turn' : 'opp-turn'}`;
+}
+
+function setInfo(msg) {
+  $('info-bar').textContent = msg;
+}
+
+// ========================================================
+// Game flow
+// ========================================================
+function startGame(myCol) {
+  myColor = myCol;
+  board = initBoard();
+  currentTurn = BLACK;
+  gameActive = true;
+
+  $('lobby').style.display = 'none';
+  $('game').style.display  = 'flex';
+
+  buildBoardDOM();
+  renderBoard();
+  updateScoreUI();
+  updateTurnBadge();
+
+  const colorName = myColor === BLACK ? '黒' : '白';
+  setInfo(`あなたは${colorName}です。`);
+}
+
+function processMove(row, col, color, fromRemote=false) {
+  const result = applyMove(board, row, col, color);
+  if (!result) return false;
+
+  board = result.board;
+  updateScoreUI();
+
+  // Animate flips
+  renderBoard(result.flips);
+  setTimeout(() => {
+    // Remove flip class
+    $('board').querySelectorAll('.piece.flip').forEach(p => p.classList.remove('flip'));
+  }, 400);
+
+  // Determine next turn
+  const next = color === BLACK ? WHITE : BLACK;
+  const nextValid = getValidMoves(board, next);
+  const prevValid = getValidMoves(board, color);
+
+  if (!nextValid.length && !prevValid.length) {
+    // Game over
+    setTimeout(showResult, 600);
+    return true;
+  }
+
+  if (!nextValid.length) {
+    // Next player must pass
+    currentTurn = color; // same player continues
+    const skipped = color === BLACK ? '白' : '黒';
+    setInfo(`${skipped}は置ける場所がないのでパスします。`);
+    if (fromRemote) {
+      // We are the one who gets skipped, so it's our turn again
+      updateTurnBadge();
+      renderBoard();
+    } else {
+      // Tell remote to pass
+      send({ type: 'pass' });
+      updateTurnBadge();
+      renderBoard();
+    }
+  } else {
+    currentTurn = next;
+    updateTurnBadge();
+    renderBoard();
+    if (currentTurn === myColor) {
+      setInfo('あなたの番です。');
+    } else {
+      setInfo('相手の番です...');
+    }
+  }
+
+  return true;
+}
+
+function showResult() {
+  gameActive = false;
+  const {black, white} = countPieces(board);
+  const overlay = $('result-overlay');
+  const title   = $('result-title');
+  const score   = $('result-score');
+
+  if (black > white) {
+    title.textContent = myColor===BLACK ? '🎉 あなたの勝ち！' : '😢 あなたの負け';
+    title.style.color = black > white ? '#fbbf24' : '#94a3b8';
+  } else if (white > black) {
+    title.textContent = myColor===WHITE ? '🎉 あなたの勝ち！' : '😢 あなたの負け';
+    title.style.color = white > black ? '#fbbf24' : '#94a3b8';
+  } else {
+    title.textContent = '🤝 引き分け';
+    title.style.color = '#e2e8f0';
+  }
+
+  score.textContent = `黒 ${black} — 白 ${white}`;
+  overlay.classList.add('show');
+}
+
+// ========================================================
+// PeerJS communication
+// ========================================================
+function sanitizeKeyword(kw) {
+  return 'osero-' + kw.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+}
+
+function send(data) {
+  if (conn && conn.open) conn.send(JSON.stringify(data));
+}
+
+function handleMessage(raw) {
+  const msg = JSON.parse(raw);
+
+  if (msg.type === 'start') {
+    // Guest receives color assignment
+    const myCol = msg.guestColor;
+    startGame(myCol);
+    setInfo('ゲーム開始！相手（黒）の番です...');
+    return;
+  }
+
+  if (msg.type === 'move') {
+    processMove(msg.row, msg.col, msg.color, true);
+    return;
+  }
+
+  if (msg.type === 'pass') {
+    // Opponent passed, so currentTurn stays with us
+    const passer = currentTurn === BLACK ? '白' : '黒';
+    setInfo(`${passer}はパスしました。あなたの番です。`);
+    updateTurnBadge();
+    renderBoard();
+    return;
+  }
+
+  if (msg.type === 'rematch') {
+    board = initBoard();
+    currentTurn = BLACK;
+    gameActive = true;
+    // Swap colors for rematch
+    myColor = myColor === BLACK ? WHITE : BLACK;
+    $('result-overlay').classList.remove('show');
+    buildBoardDOM();
+    renderBoard();
+    updateScoreUI();
+    updateTurnBadge();
+    const colorName = myColor === BLACK ? '黒' : '白';
+    setInfo(`再戦！あなたは${colorName}です。`);
+    return;
+  }
+
+  if (msg.type === 'rematch-accept') {
+    board = initBoard();
+    currentTurn = BLACK;
+    gameActive = true;
+    myColor = myColor === BLACK ? WHITE : BLACK;
+    $('result-overlay').classList.remove('show');
+    buildBoardDOM();
+    renderBoard();
+    updateScoreUI();
+    updateTurnBadge();
+    const colorName = myColor === BLACK ? '黒' : '白';
+    setInfo(`再戦！あなたは${colorName}です。`);
+    return;
+  }
+}
+
+function onCellClick(e) {
+  if (!gameActive) return;
+  if (currentTurn !== myColor) return;
+  const r = +e.currentTarget.dataset.r;
+  const c = +e.currentTarget.dataset.c;
+
+  if (!getFlips(board, r, c, myColor).length) return;
+
+  const ok = processMove(r, c, myColor, false);
+  if (ok) send({ type:'move', row:r, col:c, color:myColor });
+}
+
+// ========================================================
+// Host
+// ========================================================
+function hostRoom(keyword) {
+  const peerId = sanitizeKeyword(keyword);
+  setLobbyButtons(true);
+  showLobbyStatus(`PeerJSサーバーに接続中...`, 'waiting');
+
+  peer = new Peer(peerId);
+
+  peer.on('open', id => {
+    showLobbyStatus(`ルーム作成完了！ゲストの参加を待っています...`, 'waiting');
+    isHost = true;
+  });
+
+  peer.on('connection', c => {
+    conn = c;
+    showLobbyStatus(`ゲストが接続しました！ゲーム開始...`, 'info');
+
+    conn.on('open', () => {
+      // Host = BLACK, Guest = WHITE
+      send({ type:'start', guestColor: WHITE });
+      startGame(BLACK);
+      setInfo('あなた（黒）の番です。');
+    });
+
+    conn.on('data', handleMessage);
+
+    conn.on('close', () => {
+      gameActive = false;
+      setInfo('相手が切断しました。');
+    });
+  });
+
+  peer.on('error', err => {
+    const msg = err.type === 'unavailable-id'
+      ? 'その合言葉は現在使用中です。別の合言葉を試してください。'
+      : `エラー: ${err.message}`;
+    showLobbyStatus(msg, 'error');
+    setLobbyButtons(false);
+    peer.destroy();
+    peer = null;
+  });
+}
+
+// ========================================================
+// Join
+// ========================================================
+function joinRoom(keyword) {
+  const peerId = sanitizeKeyword(keyword);
+  setLobbyButtons(true);
+  showLobbyStatus(`ルームに接続中...`, 'waiting');
+
+  peer = new Peer();
+
+  peer.on('open', () => {
+    conn = peer.connect(peerId, { reliable:true });
+
+    conn.on('open', () => {
+      showLobbyStatus(`接続成功！ホストを待っています...`, 'info');
+    });
+
+    conn.on('data', handleMessage);
+
+    conn.on('close', () => {
+      gameActive = false;
+      setInfo('相手が切断しました。');
+    });
+
+    conn.on('error', err => {
+      showLobbyStatus(`接続エラー: ${err}`, 'error');
+      setLobbyButtons(false);
+    });
+  });
+
+  peer.on('error', err => {
+    const msg = err.type === 'peer-unavailable'
+      ? 'ルームが見つかりません。合言葉を確認してください。'
+      : `エラー: ${err.message}`;
+    showLobbyStatus(msg, 'error');
+    setLobbyButtons(false);
+    peer.destroy();
+    peer = null;
+  });
+}
+
+// ========================================================
+// Rematch / Lobby back
+// ========================================================
+$('btn-rematch').addEventListener('click', () => {
+  send({ type: 'rematch' });
+  // Apply rematch locally after a tick (so message sends first)
+  setTimeout(() => {
+    board = initBoard();
+    currentTurn = BLACK;
+    gameActive = true;
+    myColor = myColor === BLACK ? WHITE : BLACK;
+    $('result-overlay').classList.remove('show');
+    buildBoardDOM();
+    renderBoard();
+    updateScoreUI();
+    updateTurnBadge();
+    const colorName = myColor === BLACK ? '黒' : '白';
+    setInfo(`再戦！あなたは${colorName}です。`);
+  }, 50);
+});
+
+$('btn-lobby-back').addEventListener('click', () => {
+  $('result-overlay').classList.remove('show');
+  $('game').style.display  = 'none';
+  $('lobby').style.display = 'block';
+  $('keyword-input').value = '';
+  showLobbyStatus('', '');
+  setLobbyButtons(false);
+  gameActive = false;
+  if (conn) { conn.close(); conn = null; }
+  if (peer) { peer.destroy(); peer = null; }
+});
+
+// ========================================================
+// Lobby buttons
+// ========================================================
+$('btn-host').addEventListener('click', () => {
+  const kw = $('keyword-input').value.trim();
+  if (!kw) { showLobbyStatus('合言葉を入力してください。', 'error'); return; }
+  hostRoom(kw);
+});
+
+$('btn-join').addEventListener('click', () => {
+  const kw = $('keyword-input').value.trim();
+  if (!kw) { showLobbyStatus('合言葉を入力してください。', 'error'); return; }
+  joinRoom(kw);
+});
+
+$('keyword-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('btn-host').click();
+});
+</script>
+</body>
+</html>
