@@ -590,7 +590,13 @@ function showResult() {
 // PeerJS communication
 // ========================================================
 function sanitizeKeyword(kw) {
-  return 'osero-' + kw.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+  // Hash the keyword so any characters (including Japanese) produce a valid alphanumeric PeerJS ID
+  let h = 0x811c9dc5;
+  for (let i = 0; i < kw.length; i++) {
+    h ^= kw.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return 'osero-' + h.toString(36);
 }
 
 function send(data) {
